@@ -1,0 +1,142 @@
+---
+title: "NYPD-Project-Report"
+author: "Saikat Sengupta"
+date: "2023-05-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Step 0: Import Library
+
+```{r}
+# install.packages("tidyverse")
+library(tidyverse)
+library(lubridate)
+```
+
+# Step 1: Load Data
+
+```{r}
+df = read_csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+
+# Step 2: Tidy and Transform Data
+```{r}
+df_2 = df %>% select(INCIDENT_KEY,
+                   OCCUR_DATE,
+                   OCCUR_TIME,
+                   BORO,
+                   STATISTICAL_MURDER_FLAG,
+                   PERP_AGE_GROUP,
+                   PERP_SEX,
+                   PERP_RACE,
+                   VIC_AGE_GROUP,
+                   VIC_SEX,
+                   VIC_RACE,
+                   Latitude,
+                   Longitude)
+# Return the column name along with the missing values
+lapply(df_2, function(x) sum(is.na(x)))
+```
+
+```{r}
+df_2 = df_2 %>%
+  replace_na(list(PERP_AGE_GROUP = "Unknown", PERP_SEX = "Unknown", PERP_RACE = "Unknown"))
+
+# Remove extreme values in data
+df_2 = subset(df_2, PERP_AGE_GROUP!="1020" & PERP_AGE_GROUP!="224" & PERP_AGE_GROUP!="940")
+df_2$PERP_AGE_GROUP = recode(df_2$PERP_AGE_GROUP, UNKNOWN = "Unknown")
+df_2$PERP_SEX = recode(df_2$PERP_SEX, U = "Unknown")
+df_2$PERP_RACE = recode(df_2$PERP_RACE, UNKNOWN = "Unknown")
+df_2$VIC_SEX   = recode(df_2$VIC_SEX, U = "Unknown")
+df_2$VIC_RACE   = recode(df_2$VIC_RACE, UNKNOWN = "Unknown")
+df_2$INCIDENT_KEY = as.character(df_2$INCIDENT_KEY)
+df_2$BORO = as.factor(df_2$BORO)
+df_2$PERP_AGE_GROUP = as.factor(df_2$PERP_AGE_GROUP)
+df_2$PERP_SEX = as.factor(df_2$PERP_SEX)
+df_2$PERP_RACE = as.factor(df_2$PERP_RACE)
+df_2$VIC_AGE_GROUP = as.factor(df_2$VIC_AGE_GROUP)
+df_2$VIC_SEX = as.factor(df_2$VIC_SEX)
+df_2$VIC_RACE = as.factor(df_2$VIC_RACE)
+# Return summary statistics
+summary(df_2)
+```
+
+# Step 3: Visualizations and Analysis
+
+Which day and time should people in New York be cautious of falling into victims of crime?
+• Weekends in NYC have the most chances of incidents. Be cautious!
+• Incidents historically happen in the evening and night time. If there’s nothing urgent, recommend people staying at home!
+```{r}
+df_2$OCCUR_DAY = mdy(df_2$OCCUR_DATE)
+df_2$OCCUR_DAY = wday(df_2$OCCUR_DAY, label = TRUE)
+df_2$OCCUR_HOUR = hour(hms(as.character(df_2$OCCUR_TIME)))
+df_3 = df_2 %>%
+  group_by(OCCUR_DAY) %>%
+  count()
+df_4 = df_2 %>%
+  group_by(OCCUR_HOUR) %>%
+  count()
+```
+
+```{r}
+g <- ggplot(df_3, aes(x = OCCUR_DAY, y = n)) +
+  geom_col() +
+  labs(title = "Which day should people in New York be cautious of incidents?",
+       x = "Incident Occurence Day",
+       y = "Count of Incidents") +
+  theme_minimal()
+g
+```
+
+```{r}
+g <- ggplot(df_4, aes(x = OCCUR_HOUR, y = n)) +
+  geom_line() +
+  labs(title = "Which time should people in New York be cautious of incidents?",
+       x = "Incident Occurence Hour",
+       y = "Count of Incidents") +
+  theme_minimal()
+g
+```
+
+2. Which part of New York has the most number of incidents? Of those incidents, how many are murder cases?
+Brooklyn is the 1st in terms of the number of incidents, followed by Bronx and Queens respectively. Likewise, the number of murder cases follows the same pattern as that of incidents.
+
+```{r}
+g <- ggplot(df_2, aes(x = BORO)) +
+  geom_bar() +
+  labs(title = "Boroughs of New York City",
+       x = "Boroughs of New York City",
+       y = "Count of Incidents") +
+  theme_minimal()
+g
+```
+
+3. The Profile of Perpetrators and Victims
+• There’s a striking number of incidents in the age group of 25-44 and 18-24.
+• Black and White Hispanic stood out in the number of incidents in Boroughs of New York City. 
+• There are significantly more incidents with Male than those of Female.
+
+```{r}
+table(df_2$PERP_AGE_GROUP, df_2$VIC_AGE_GROUP)
+```
+
+```{r}
+table(df_2$PERP_SEX, df_2$VIC_SEX)
+```
+
+Building logistic regression model to predict if the incident is likely a murder case or not?
+
+Logistic regression is an instance of classification technique that you can use to predict a qualitative response. I will use logistic regression models to estimate the probability that a murder case belongs to a particular profile, location, or date & time.
+
+```{r}
+glm.fit <- glm(STATISTICAL_MURDER_FLAG ~ PERP_RACE + PERP_SEX + PERP_AGE_GROUP + OCCUR_HOUR + OCCUR_DAY + Latitude + Longitude, data = df_2, family = binomial)
+summary(glm.fit)
+```
+
+# Step 4: Bias
+
+This topic has the potential to generate unconscious discrimination and bias in individuals. Based on my personal experience of living near New York City, I would assume that the Bronx has the highest number of incidents and that women are more likely to be targeted than men. However, it is essential to support these beliefs with data to make a well-informed decision. It is interesting to note that Brooklyn has the highest number of incidents, followed by the Bronx and Queens, and the number of murders follows a similar pattern. Moreover, there are significantly more incidents involving males than females. It is important to test and verify these assumptions using a data-driven approach instead of relying solely on personal experience, which could be biased and incorrect towards certain groups and populations. My findings align with CNN's report on the surge of hate crimes and shooting incidents in New York City, where shooting incidents increased by 73% in May 2021 compared to May 2020.
