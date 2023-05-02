@@ -1,0 +1,198 @@
+---
+title: "Covid-19 Report"
+author: "Saikat Sengupta"
+date: "2023-05-02"
+output:
+  html_document: default
+  pdf_document: default
+---
+# Introduction
+
+Our task for the DTSA 5301: Data Science as a Field course is to showcase our proficiency in executing all stages of the data science process. We will achieve this by generating a replicable report based on the COVID19 dataset obtained from the John Hopkins GitHub repository.
+
+## Questions asked in this project
+
+What is the Wisconsin county with the highest COVID19 mortality rate, and what is the Wisconsin county with the lowest COVID19 mortality rate? Additionally, can we employ a Linear Regression Model to forecast future COVID19 cases and deaths in Wisconsin?
+
+# Step 0: Import Libraries
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(dplyr)
+```
+
+# Step 2:Import and Describe the Dataset
+
+```{r}
+# All files begin with this string.
+url_in <- ('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/')
+# Vector containing four file names.
+file_names <-
+  c("time_series_covid19_confirmed_global.csv",
+  "time_series_covid19_deaths_global.csv",
+  "time_series_covid19_confirmed_US.csv",
+  "time_series_covid19_deaths_US.csv")
+
+urls <- str_c(url_in, file_names)
+ 
+
+global_cases <- read_csv(urls[1])
+global_deaths <- read_csv(urls[2])
+US_cases <- read_csv(urls[3])
+US_deaths <- read_csv(urls[4])
+```
+
+# Step 3: Tidy and Transform the Dataset
+
+```{r}
+global_cases <- global_cases %>%
+  pivot_longer(cols =
+                 -c('Province/State',
+                    'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "cases")
+global_deaths <- global_deaths %>%
+  pivot_longer(cols =
+                 -c('Province/State',
+                    'Country/Region', Lat, Long),
+               names_to = "date",
+               values_to = "deaths")
+ global <- global_cases %>%
+  full_join(global_deaths) %>%
+    rename(Country_Region = 'Country/Region',
+       Province_State = 'Province/State') %>%
+  mutate(date = mdy(date))
+```
+
+```{r}
+summary(global)
+```
+
+```{r}
+US_cases <- US_cases %>%
+  pivot_longer(cols = -(UID:Combined_Key),
+               names_to = "date",
+               values_to = "cases")  %>%
+  select(Admin2:cases) %>%
+  mutate(date = mdy(date)) %>%
+  select (-c(Lat, Long_))
+
+US_deaths <- US_deaths %>%
+  pivot_longer(cols = -(UID:Population),
+               names_to = "date",
+               values_to = "deaths")  %>%
+  select(Admin2:deaths) %>%
+  mutate(date = mdy(date)) %>%
+  select (-c(Lat, Long_))
+
+ US <- US_cases %>%
+  full_join(US_deaths)
+```
+
+```{r}
+summary(US)
+```
+
+# Step 4: Visualization and Analysis of the Dataset
+```{r}
+# Filter US dataset for only the rows where Province_State is Wisconsin.
+wisc <- US %>%
+  filter(Province_State == "Wisconsin", cases > 0) %>%
+  group_by(date, Admin2)
+# Group Wisconsin data by county and add mortality rate column.
+wisc_counties <- wisc %>%
+  group_by(Admin2, date) %>%
+  mutate(mortality_rate = deaths / cases) %>%
+  select(Admin2, date, cases, deaths, Population, mortality_rate)
+# Sum all Wisconsin county cases, deaths, and populations.
+wisc_totals <- wisc %>%
+  group_by(date) %>%
+  summarize(cases = sum(cases), deaths = sum(deaths), Population = sum(Population)) %>%
+  select(date, cases, deaths, Population) %>%
+  ungroup()
+# Create a dataframe that contains the most recent statistics for each Wisconsin county. .
+current_counties <- wisc_counties %>%
+  filter(date == "2022-04-22") %>%
+  group_by(Admin2) %>%
+  mutate(county_mortality_rate = deaths/cases) %>%
+  select(date, Admin2, cases, deaths, Population, county_mortality_rate) %>%
+  ungroup()
+```
+
+```{r}
+max(wisc_totals$cases)
+max(wisc_totals$deaths) / max(wisc_totals$cases)
+current_counties %>% slice_max(county_mortality_rate)
+current_counties %>% slice_min(county_mortality_rate)
+```
+
+```{r}
+#Create a new dataframe for Iron County and add columns for daily new cases and deaths.
+iron_county <- wisc_counties %>%
+  filter(Admin2 == "Iron") %>%
+  group_by(Admin2) %>%
+  mutate(new_cases = cases - lag(cases), new_deaths = deaths - lag(deaths)) %>%
+  select(date, Admin2, cases, deaths, Population, new_cases, new_deaths)
+iron_county <- iron_county %>%
+  filter(new_cases >= 0, new_deaths >=0)
+ggplot(iron_county, aes(x=date)) +
+  geom_line(aes(y = new_cases), color="steelblue") +
+  scale_x_date(date_labels = "%Y %b %d", date_breaks = "4 month") +
+  theme_bw() +
+  labs(x = "Dates",
+       y = "New COVID19 Cases",
+       title = "Iron County New COVID19 Cases - Time Series")
+
+```
+
+```{r}
+ggplot(iron_county, aes(x=date)) +
+  geom_line(aes(y = new_deaths), color = "dark red") +
+    scale_x_date(date_labels = "%Y %b %d", date_breaks = "4 month") +
+  theme_bw() +
+  labs(x = "Dates",
+       y = "New COVID19 Deaths",
+       title = "Iron County New COVID19 Deaths - Time Series")
+```
+
+```{r}
+# Create a new dataframe for Iron County and add columns for daily new cases and deaths.
+buffalo_county <- wisc_counties %>%
+  filter(Admin2 == "Buffalo") %>%
+  group_by(Admin2) %>%
+  mutate(new_cases = cases - lag(cases), new_deaths = deaths - lag(deaths)) %>%
+  select(date, Admin2, cases, deaths, Population, new_cases, new_deaths)
+buffalo_county <- buffalo_county %>%
+  filter(new_cases >= 0, new_deaths >=0)
+ggplot(buffalo_county, aes(x=date)) +
+  geom_line(aes(y = new_cases), color="steelblue") +
+  scale_x_date(date_labels = "%Y %b %d", date_breaks = "4 month") +
+  theme_bw() +
+  labs(x = "Dates",
+       y = "New COVID19 Cases",
+       title = "Buffalo County New COVID19 Cases - Time Series")
+
+```
+
+```{r}
+ggplot(buffalo_county, aes(x=date)) +
+  geom_line(aes(y = new_deaths), color = "dark red") +
+    scale_x_date(date_labels = "%Y %b %d", date_breaks = "4 month") +
+  theme_bw() +
+  labs(x = "Dates",
+       y = "New COVID19 Deaths",
+       title = "Buffalo County New COVID19 Deaths - Time Series")
+```
+
+
+# Step 5: Bias and Conclusion of the Dataset
+
+## Conclusion
+
+My analysis revealed that Iron County has the highest COVID19 mortality rate in Wisconsin, while Buffalo County has the lowest COVID19 mortality rate in Wisconsin. 
+
+## Bias
+
+COVID19 has turned into a highly politicized topic, and expressing a strong opinion on this debate could create a source of bias. I prevented this by remaining impartial and avoiding any presumptions. My primary focus was on the data itself rather than the political environment surrounding the pandemic. While data collection can also introduce bias, the dataset I utilized had detailed documentation about its acquisition and the entities involved. Hence, I feel more confident in using this dataset since it appears to be more reliable. Although there may be some uncertainty about how COVID19 cases were reported, this is a typical issue with any data related to infectious diseases. We should expect such ambiguities and work with the available data as efficiently as possible.
